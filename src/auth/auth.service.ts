@@ -302,15 +302,34 @@ export class AuthService {
     }
   }
 
-  async updateTenantUserById(id: string, dto: UpdateTenantUserDto) {
+  async updateTenantUserById(
+    currentUserId: string,
+    currentRoles: string[],
+    id: string,
+    dto: UpdateTenantUserDto
+  ) {
     const user = await this.prisma.usuarios.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const currentUser = await this.prisma.usuarios.findUnique({
+      where: { id: currentUserId },
+      select: { tenantId: true },
+    });
+
+    // Si no sos superadmin, asegurate de que sea del mismo tenant
+    const isSuperAdmin = currentRoles.includes('SUPERADMIN');
+
+    if (!isSuperAdmin) {
+      if (!currentUser || currentUser.tenantId !== user.tenantId) {
+        throw new ForbiddenException('No tienes permisos para editar este usuario');
+      }
+    }
 
     const data: any = {};
 
     if (dto.name) data.name = dto.name.trim();
     if (dto.email) data.email = dto.email.toLowerCase();
-    if (dto.password) data.password = await argon2.hash(dto.password); // u otro método tuyo
+    if (dto.password) data.password = await argon2.hash(dto.password);
 
     if (dto.tenantSlug && dto.tenantSlug !== '') {
       const tenant = await this.prisma.tenants.findUnique({ where: { slug: dto.tenantSlug } });
@@ -318,35 +337,50 @@ export class AuthService {
       data.tenantId = tenant.id;
     }
 
-    // ⚠️ Roles: si se envía roleId o roleName, actualizar asignación
+    // ⚠️ Roles: si se envía roleId o roleName, validar y asignar
     let updatedRole;
     if (dto.roleId || dto.roleName) {
       const tenantId = data.tenantId || user.tenantId;
 
       if (dto.roleId) {
         const role = await this.prisma.roles.findUnique({ where: { id: dto.roleId } });
-        if (!role || role.tenantId !== tenantId)
+        if (!role || role.tenantId !== tenantId) {
           throw new BadRequestException('Rol inválido para el tenant');
+        }
+        if (role.name === 'SUPERADMIN') {
+          throw new ForbiddenException('No se puede asignar el rol SUPERADMIN');
+        }
         updatedRole = role;
       } else if (dto.roleName) {
         const normalized = dto.roleName.trim().toUpperCase().replace(/-/g, '_');
-        updatedRole = await this.prisma.roles.upsert({
-          where: { tenantId_name: { tenantId, name: normalized } },
-          update: {},
-          create: { tenantId, name: normalized },
+
+        if (normalized === 'SUPERADMIN') {
+          throw new ForbiddenException('No se puede asignar el rol SUPERADMIN');
+        }
+
+        // 🚫 No crear si no existe — buscar solamente
+        const existingRole = await this.prisma.roles.findUnique({
+          where: {
+            tenantId_name: {
+              tenantId,
+              name: normalized,
+            },
+          },
         });
+
+        if (!existingRole) {
+          throw new BadRequestException(`El rol "${normalized}" no existe para este tenant`);
+        }
+
+        updatedRole = existingRole;
       }
 
-      // Actualizar asignación de roles
-      await this.prisma.usuarioRoles.upsert({
-        where: {
-          userId_roleId: {
-            userId: id,
-            roleId: updatedRole.id,
-          },
-        },
-        update: {},
-        create: {
+      // 🔁 Eliminar roles anteriores si solo debe haber uno
+      await this.prisma.usuarioRoles.deleteMany({ where: { userId: id } });
+
+      // Asignar nuevo rol
+      await this.prisma.usuarioRoles.create({
+        data: {
           userId: id,
           roleId: updatedRole.id,
         },
@@ -449,6 +483,50 @@ export class AuthService {
       total,
       page,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findById(currentUserId: string, roles: string[], userId: string) {
+    let where: any = { id: userId };
+
+    // Si NO es SUPERADMIN, se restringe al tenant del usuario actual
+    if (!roles.includes('SUPERADMIN')) {
+      const currentUser = await this.prisma.usuarios.findUnique({
+        where: { id: currentUserId },
+        select: { tenantId: true },
+      });
+
+      if (!currentUser) {
+        throw new BadRequestException('Usuario actual no encontrado');
+      }
+
+      // 👇 Solo puede ver usuarios dentro de su mismo tenant
+      where.tenantId = currentUser.tenantId;
+    }
+
+    const user = await this.prisma.usuarios.findFirst({
+      where,
+      include: {
+        roles: { include: { role: true } },
+        tenants: { select: { name: true, slug: true } },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado o sin permisos para verlo');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name_usuario: user.name,
+      tenantId: user.tenantId,
+      active: user.active,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      name_rol: user.roles.map((r) => r.role.name).join(', '),
+      name_empresa: user.tenants?.name || null,
+      slug_empresa: user.tenants?.slug || null,
     };
   }
 

@@ -24,19 +24,28 @@ export class CargosController {
   @Get()
   @UseGuards(AuthGuard('jwt'), AdminReclutadorOrSuperAdminGuard)
   @ApiCookieAuth('access-token')
-  @ApiOperation({ summary: 'Listar cargos (opcional: filtrar por ?tenant=slug)' })
+  @ApiOperation({ summary: 'Listar cargos paginados' })
   @ApiQuery({ name: 'tenant', required: false, description: 'Slug del tenant para filtrar' })
-  list(@Query('tenant') tenant: string, @Req() req: any) {
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Cantidad por página (default: 10)' })
+  async list(
+    @Query('tenant') tenant: string,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Req() req: any,
+  ) {
     const t = tenant?.trim().toLowerCase();
 
-    if (!t && !req.user.roles.includes('SUPERADMIN')) {
-      // ⚠️ Solo el SUPERADMIN puede listar todos
-      throw new ForbiddenException('Solo el superadmin puede ver todos los cargos');
+    // 🔢 Conversión segura
+    const pageNumber = Math.max(1, parseInt(page || '1', 10));
+    const limitNumber = Math.min(100, Math.max(1, parseInt(limit || '10', 10)));
+
+    // 🚨 Si no es SUPERADMIN y no se pasa tenant, se restringe
+    if (!req.user.roles.includes('SUPERADMIN') && !t) {
+      throw new ForbiddenException('Debes especificar un tenant');
     }
 
-    return t
-      ? this.cargos.listByTenant(t, req.user)
-      : this.cargos.findAll(); // Solo superadmin puede llegar acá
+    return this.cargos.listPaginated(t, req.user, pageNumber, limitNumber);
   }
 
 

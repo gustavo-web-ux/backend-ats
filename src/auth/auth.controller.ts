@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { Request } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { BootstrapSuperadminDto } from './dto/bootstrap-superadmin.dto';
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
@@ -30,7 +31,7 @@ interface RequestWithUser extends Request {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService, private jwt: JwtService) { }
+  constructor(private auth: AuthService, private prisma: PrismaService, private jwt: JwtService) { }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -62,6 +63,26 @@ export class AuthController {
     //     tenant: u.tenant.slug,
     //   },
     // };
+  }
+
+  @UseGuards(AuthGuard('jwt')) // ✅ Solo JWT guard
+  @Get('validate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verifica si el token actual es válido' })
+  @ApiResponse({ status: 200, description: 'Token válido' })
+  @ApiResponse({ status: 401, description: 'Token inválido o expirado' })
+  validate(@Req() req: any) {
+    const user = req.user;
+    return {
+      valid: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        tenant: user.tenant,
+        roles: user.roles,
+        tipoUsuario: 'corporativo',
+      },
+    };
   }
 
   @Post('bootstrap-superadmin')
@@ -130,6 +151,22 @@ export class AuthController {
     return this.auth.createTenantUser(dto);
   }
 
+  @Get('users/:id')
+  @UseGuards(AuthGuard('jwt'), AdminOrSuperAdminGuard)
+  @ApiCookieAuth('access-token')
+  @ApiOperation({ summary: 'Obtener un usuario por ID (acceso según rol)' })
+  @ApiParam({ name: 'id', description: 'ID del usuario a obtener' })
+  @ApiResponse({ status: 200, description: 'Usuario encontrado' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado o sin permisos' })
+  async findUserById(
+    @Param('id') id: string,
+    @Req() req: RequestWithUser
+  ) {
+    const currentUserId = req.user.id;
+    const userRoles = req.user.roles;
+    return this.auth.findById(currentUserId, userRoles, id);
+  }
+
   @Post('tenant/users')
   @UseGuards(AuthGuard('jwt'), TenantAdminGuard)
   @ApiCookieAuth('access-token')
@@ -158,16 +195,24 @@ export class AuthController {
   }
 
   @Patch('users/:id')
-  @UseGuards(AuthGuard('jwt'), SuperAdminGuard)
+  @UseGuards(AuthGuard('jwt'), AdminOrSuperAdminGuard)
   @ApiCookieAuth('access-token')
   @ApiOperation({ summary: 'Actualizar usuario de tenant (SUPERADMIN)' })
   @ApiParam({ name: 'id', description: 'ID del usuario a actualizar' })
   @ApiBody({ type: UpdateTenantUserDto })
   @ApiResponse({ status: 200, description: 'Usuario actualizado' })
+  @ApiResponse({ status: 403, description: 'Sin permisos' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
   @ApiResponse({ status: 409, description: 'Email en uso' })
-  async updateTenantUser(@Param('id') id: string, @Body() dto: UpdateTenantUserDto) {
-    return this.auth.updateTenantUserById(id, dto);
+  async updateTenantUser(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateTenantUserDto
+  ) {
+    const currentUserId = req.user.id;
+    const currentRoles = req.user.roles;
+
+    return this.auth.updateTenantUserById(currentUserId, currentRoles, id, dto);
   }
 
   // @Post('refresh')
@@ -218,21 +263,30 @@ export class AuthController {
   @ApiCookieAuth('access-token')
   @ApiOperation({ summary: 'Obtener datos del usuario autenticado' })
   @ApiResponse({ status: 200, description: 'Datos del usuario actual' })
-  me(@Req() req: any) {
+  async me(@Req() req: any) {
+    const user = req.user;
 
-    // req.user viene del payload del access token
-    // payload: { sub, tid, roles, perms, isSuperAdmin, email, tenant, iat, exp }
+    // 🔧 Tipamos tenant correctamente
+    const tenant: { name: string; slug: string } | null =
+      user.tid
+        ? await this.prisma.tenants.findUnique({
+          where: { id: user.tid },
+          select: { name: true, slug: true },
+        })
+        : null;
+
     return {
-      id: req.user.sub,
-      tenantId: req.user.tid,
-      roles: req.user.roles,
-      perms: req.user.perms,
-      isSuperAdmin: req.user.isSuperAdmin,
-      email: req.user.email,
-      tenant: req.user.tenant,
+      id: user.sub,
+      tenantId: user.tid ?? null,
+      tenantSlug: tenant?.slug ?? null,
+      tenantName: tenant?.name ?? null,
+      roles: user.roles ?? [],
+      perms: user.perms ?? [],
+      isSuperAdmin: user.isSuperAdmin ?? false,
+      email: user.email ?? null,
       tipoUsuario: 'corporativo',
     };
-
-
   }
+
+
 }

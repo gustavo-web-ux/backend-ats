@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { calcularMatchScore } from '../common/utils/score-utils';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVacanteDto } from './dto/create-vacante.dto';
 import { UpdateVacanteDto } from './dto/update-vacante.dto';
@@ -55,6 +56,35 @@ export class VacantesService {
     return vacante;
   }
 
+  async getById(id: string, user: any) {
+    const vacante = await this.prisma.vacantes.findUnique({
+      where: { id },
+      include: { cargo: true, tenant: true }
+    });
+
+    if (!vacante || vacante.deletedAt) {
+      throw new NotFoundException('Vacante no encontrada o eliminada');
+    }
+
+    const roles = user.roles || [];
+    const isSuperAdmin = user?.isSuperAdmin === true;
+    const isAdminOrRecruiter = roles.includes('ADMIN') || roles.includes('RECLUTADOR');
+    const isCandidate = user.tipoUsuario === 'candidato'; // ✅ CAMBIO CLAVE
+
+    // Si es admin o reclutador, validar tenant
+    if ((isSuperAdmin || isAdminOrRecruiter) && vacante.tenant.slug !== user.tenant) {
+      throw new ForbiddenException('No tienes acceso a esta vacante');
+    }
+
+    // Si es candidato, solo permitir si la vacante es pública y abierta
+    if (isCandidate) {
+      if (vacante.estado !== 'abierta' || vacante.visibilidad !== 'PUBLICA') {
+        throw new ForbiddenException('Vacante no disponible para candidatos');
+      }
+    }
+
+    return vacante;
+  }
 
   async list(tenantSlug: string, user: any, estado?: string) {
     const userTenantSlug = user.tenant;
@@ -179,6 +209,46 @@ export class VacantesService {
     });
 
     return updated;
+  }
+
+  async resumenPostulaciones(vacanteId: string, user: any) {
+    const vacante = await this.prisma.vacantes.findUnique({
+      where: { id: vacanteId },
+      include: {
+        cargo: true,
+        postulaciones: {
+          include: {
+            candidato: true,
+            respuestas: {
+              include: {
+                pregunta: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!vacante) throw new NotFoundException('Vacante no encontrada');
+
+    const competencias = vacante.cargo.competenciasJson
+      ? JSON.parse(vacante.cargo.competenciasJson)
+      : {};
+
+    const resultados = vacante.postulaciones.map(p => {
+      const { score, detalle } = calcularMatchScore(p.respuestas, competencias);
+      return {
+        candidatoId: p.candidato.id,
+        nombre: p.candidato.nombre,
+        email: p.candidato.email,
+        estado: p.estado,
+        score,
+        detalle,
+        fechaPostulacion: p.createdAt
+      };
+    });
+
+    return resultados.sort((a, b) => b.score - a.score); // ordenados del más apto
   }
 
 }

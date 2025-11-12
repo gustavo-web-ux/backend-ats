@@ -177,8 +177,8 @@ ok, como seria lo mejor tengo el rol superadmin, creo un nuevo tenants/empresa/c
 
 
 
-
-
+contraseña cuenta gmail monitoreo
+---Monitoreo2025!
 
 
 
@@ -530,3 +530,145 @@ postulaciones	✅	✅	✅
 entrevistas	✅	✅	✅
 feedback	✅	✅	✅
 cargos	✅	✅	⚠️ Opcional
+
+
+
+
+
+
+APP-MOVIL
+1°
+base de datos: msyql (dockerizada) backend-api: nestjs + prisma (dockerizada) frontend-app: react native con expo, intefaz para movil se utilizo para emular una vista de movil algunas cosas de android studio ...-- ahora teniendo en cuenta todo eso --- te consultare lo siguiente
+
+
+
+2°
+quiero hacer que le app sea offline, seria con mysqllite ??? que cambiaria porque el backned si esta en comunicacion con el frontend pero no esta totalmente integrado al front para que sea offline, tampoco en la actual app-front no tiene su base de datos interno en el telefono donde esta instalado, basiacmente seria una nueva version de la app, como seria para empezar ?
+
+
+3°
+si es cierto, el backend ya lo tenog, pero como seria para integrar un backend parecido pero ya a la app o seria la BD la que tengo que integrar ??, para que guarde local los datos, y cuando tenga coenxion a internet, wifi, se haga la sincronizacion, pero seria directo ya a un backend del servidor central, no a la api-backend de la app movil que tenog ahora y esta en otro servidor de menor tamaño,
+
+
+
+App móvil (con SQLite)
+   ↙️            ↘️
+ Lectura       Escritura local
+   ⬇️                ⬇️
+     Sincronización directa ➝ API Central (cuando hay conexión)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Punto 1 
+Se tiene un servidor central, en donde hay una bd central y una api (central) que interactua con la bd central,
+en dicha bd central hay tabla sucursal, y hay varias sucursales, con su id y su descripcion, y vamos a suponer que en 
+mi entorno de desarrollo (proceso de transicion a  offline) estoy aun pensando y creo que la app debera ser
+hibrida online (para ciertas datos) pero lo fundamental es que tambien sea offline tambien para ciertos datos.
+Volviendo a lo de bd central hay tabla sucursal, y hay varias sucursales, supongamos que ya existe la sucursal que 
+tengo que usar para la app de una sucursal, y solo necesito indicar o consulta el id y su descripcion para que la bd central me envie o consulte los datos y lo guarde
+ya en el sqllite cuando tenga señal de internet, la insercion de la sucursal sera basicamente 1 por telefono hasta este momento
+y lo de la consulta de la sucursal e insercion sera solo una vez, ya guardado en la bd local sqllite, la app debera
+trabajar offline con la sucursal que ya esta guardada en la bd local sqllite, mi consulta es como podria hacer
+esa logica de obtener la sucursal (id y descripcion) desde la bd local sqllite. Un punto importante para dejar claro
+es que entre la bd central y la app movil, el puente sera la api central seria una comunicacion bidireccional mas o menos, la app no se conecta directamente a la bd central
+sino que la app movil se conecta a la api central y la api central se conecta a la bd central. 
+
+
+
+Punto 2
+Lo que tengo:
+BD sqlserver central (servidor central).
+api, nodejs-express central con js (servidor central).
+
+app-movil react-native (cliente movil).
+bd local sqlite (cliente movil). (esto apenas lo estoy probando, ya tengo 2 tablas, sucursales)
+
+consideraciones:
+se podria hacer la app con webscoket ??
+en caso de que si deberia de hacer un nueva api central con webscoket??
+porque la api-central actual es no es con webscoket, es con peticiones http normales (get, post, put, delete).
+la bd central deberia de tener algun cambio para que pueda trabajar con webscoket ??
+
+
+
+
+
+
+
+(Opcional) Validar que las preguntas pertenezcan al cargo de la vacante postulada
+
+Esto puede hacerse si querés asegurar integridad estricta, revisando si cada preguntaId pertenece al mismo cargoId de la vacanteId de la postulación. Esto lo podés agregar dentro del bulkCreate, aunque inicialmente podés dejarlo simple para validar funcionalidad.
+
+
+
+
+
+
+
+
+
+
+✅ ¿Dónde deberían ir las Preguntas?
+🔹 ¿Quién crea las preguntas?
+
+👉 El reclutador o admin al crear un cargo.
+
+🔹 ¿Dónde deben gestionarse (crear/listar)?
+
+📍 Módulo: corp
+📂 Ubicación sugerida: modules/corp/pages/PreguntasCargo.jsx
+
+Podés agregar la gestión de preguntas como una sección dentro del detalle del cargo o como una vista separada.
+
+✅ ¿Dónde deberían ir las Respuestas?
+🔹 ¿Quién responde?
+
+👉 El candidato al postularse a una vacante (ligada a un cargo que tiene preguntas).
+
+🔹 ¿Dónde deben mostrarse o responderse?
+
+📍 Módulo: ext
+📂 Ubicación sugerida: modules/ext/pages/RespondePreguntas.jsx
+
+Ese formulario se debería mostrar después de que el candidato inicie la postulación.
+
+✅ ¿Dónde deberían verse las respuestas y el resumen (scores)?
+🔹 ¿Quién las ve?
+
+👉 Superadmin, admin o reclutador
+
+🔹 ¿Dónde deben listarse?
+
+📍 Módulo: corp
+📂 Página sugerida: modules/corp/pages/VacanteResumen.jsx
+
+Acá se visualiza el matchScore, estado del candidato y datos útiles.
+
+🧭 Flujo completo visual (resumen):
+Usuario	Acción	Módulo	Página sugerida
+Admin	Crear preguntas	corp	PreguntasCargo.jsx
+Candidato	Responder preguntas	ext	RespondePreguntas.jsx
+Reclutador	Ver resumen y scores	corp	VacanteResumen.jsx
+¿Cómo seguimos?
+
+Puedo ayudarte ahora con:
+
+La página para gestionar preguntas (corp)
+
+La página para responder preguntas (ext)
+
+El resumen de scores (corp) – si no lo termina

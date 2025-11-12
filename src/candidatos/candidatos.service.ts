@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { CreateCandidatoDto } from './dto/create-candidato.dto';
 import { CandidateRegisterDto } from './dto/candidate-register.dto';
 import { CandidateLoginDto } from './dto/candidate-login.dto';
@@ -100,9 +100,18 @@ export class CandidatosService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    const candidato = cuenta.candidatos?.[0];
+    // ✅ asegurate de que tenga un candidato asociado
+    if (!candidato) {
+      throw new UnauthorizedException('No se encontró candidato asociado a la cuenta');
+    }
+
     const payload = {
-      sub: cuenta.id,
+      id: candidato.id,      // id real del candidato
+      cuentaId: cuenta.id,   // id de la cuenta
       email: cuenta.email,
+      tipoUsuario: 'candidato', // 👈 AGREGALO AQUÍ
+      tenantId: candidato.tenantId,      // <--- agregar
     };
 
     const accessToken = await this.authService.signAccess(payload);
@@ -118,6 +127,7 @@ export class CandidatosService {
       message: 'Login exitoso',
       // ⚠️ Solo para debug temporal: devolvé también el payload
       payload, // podés quitarlo después
+      candidatoId: candidato.id,
     };
   }
 
@@ -130,7 +140,7 @@ export class CandidatosService {
             include: {
               vacante: {
                 include: {
-                  tenant: { select: { name: true } },
+                  tenant: { select: { name: true, slug: true } }, // ✅ ver de qué empresa es la vacante
                   cargo: true,
                 },
               },
@@ -138,27 +148,53 @@ export class CandidatosService {
               entrevistas: true,
               feedbacks: true,
             },
+            orderBy: { createdAt: 'desc' }, // 👌 opcional: mostrar postulaciones más recientes primero
           },
         },
       });
 
-      if (!candidato) throw new NotFoundException('Candidato no encontrado');
+      if (!candidato) {
+        throw new NotFoundException('Candidato no encontrado');
+      }
 
       return {
-        postulaciones: candidato.postulaciones,
+        candidato: {
+          id: candidato.id,
+          nombre: candidato.nombre,
+          email: candidato.email,
+          telefono: candidato.telefono,
+          cvUrl: candidato.cvUrl,
+          avatarFilename: candidato.avatarFilename, // ✅ AÑADIDO
+        },
+        tipoUsuario: 'candidato',
+        postulaciones: candidato.postulaciones.map((p) => ({
+          id: p.id,
+          estado: p.estado,
+          mensaje: p.mensaje,
+          createdAt: p.createdAt,
+          vacante: {
+            id: p.vacante.id,
+            //titulo: p.vacante.titulo,
+            cargo: p.vacante.cargo?.nombre,
+            empresa: p.vacante.tenant.name,
+            slug: p.vacante.tenant.slug,
+          },
+        })),
       };
     }
 
-    // Caso sin include
+    // Caso sin includePostulaciones
     const candidato = await this.prisma.candidatos.findFirst({
       where: { cuentaId },
     });
 
-    if (!candidato) throw new NotFoundException('Candidato no encontrado');
+    if (!candidato) {
+      throw new NotFoundException('Candidato no encontrado');
+    }
 
     return {
       ...this.present(candidato),
-      tipoUsuario: 'candidato', // 👈 agregado explícitamente
+      tipoUsuario: 'candidato', // 👈 útil para frontend o autenticación
     };
   }
 
@@ -193,6 +229,57 @@ export class CandidatosService {
     if (!candidato) throw new NotFoundException('Candidato no encontrado');
 
     return this.postulacionesService.create(dto, candidato.id, userContext);
+  }
+
+  async getMisPostulaciones(cuentaId: string) {
+    const candidato = await this.prisma.candidatos.findFirst({
+      where: { cuentaId },
+      include: {
+        postulaciones: {
+          include: {
+            vacante: {
+              include: {
+                tenant: { select: { name: true } },
+                cargo: true,
+              },
+            },
+            eventos: true,
+            entrevistas: true,
+            feedbacks: true,
+          },
+        },
+      },
+    });
+
+    if (!candidato) throw new NotFoundException('Candidato no encontrado');
+
+    return candidato.postulaciones;
+  }
+
+  async actualizarAvatar(cuentaId: string, filename: string) {
+    const candidato = await this.prisma.candidatos.findFirst({
+      where: { cuentaId },
+    });
+
+    if (!candidato) throw new BadRequestException('Candidato no encontrado');
+
+    await this.prisma.candidatos.update({
+      where: { id: candidato.id },
+      data: { avatarFilename: filename },
+    });
+  }
+
+  async actualizarCV(cuentaId: string, filename: string) {
+    const candidato = await this.prisma.candidatos.findFirst({
+      where: { cuentaId },
+    });
+
+    if (!candidato) throw new NotFoundException('Candidato no encontrado');
+
+    return this.prisma.candidatos.update({
+      where: { id: candidato.id },
+      data: { cvUrl: filename },
+    });
   }
 
 }

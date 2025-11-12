@@ -4,7 +4,7 @@ import { CreateVacanteDto } from './dto/create-vacante.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody, ApiCookieAuth, ApiParam } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UpdateVacanteDto } from './dto/update-vacante.dto';
-import { AdminReclutadorOrSuperAdminGuard } from '../common/guards/superadmin.guard';
+import { AdminReclutadorOrSuperAdminGuard, RolesPermitidosGuard } from '../common/guards/superadmin.guard';
 
 @ApiTags('vacantes')
 @Controller('vacantes')
@@ -20,6 +20,12 @@ export class VacantesController {
     return this.vacantes.create(dto, req.user);
   }
 
+  @Get('publicasTodas')
+  @ApiOperation({ summary: 'Listar todas las vacantes públicas de todos los tenants' })
+  listPublicasTodas() {
+    return this.vacantes.listTodasPublicas();
+  }
+
   @Get()
   @UseGuards(AuthGuard('jwt'), AdminReclutadorOrSuperAdminGuard)
   @ApiCookieAuth('access-token')
@@ -30,18 +36,34 @@ export class VacantesController {
     return this.vacantes.list(tenant.trim().toLowerCase(), req.user, estado);
   }
 
+  @Get(':id/resumen')
+  @UseGuards(AuthGuard('jwt'), AdminReclutadorOrSuperAdminGuard)
+  @ApiCookieAuth('access-token')
+  @ApiOperation({ summary: 'Obtener resumen de postulaciones con score' })
+  @ApiParam({ name: 'id', description: 'ID de la vacante' })
+  async resumen(@Param('id') id: string, @Req() req: any) {
+    return this.vacantes.resumenPostulaciones(id, req.user);
+  }
+
+
+  @Get(':id')
+  @UseGuards(AuthGuard('jwt'), RolesPermitidosGuard) // un guard que permita candidatos y admins
+  @ApiCookieAuth('access-token')
+  @ApiOperation({ summary: 'Obtener vacante por ID (según rol y permisos)' })
+  @ApiParam({ name: 'id', description: 'ID de la vacante' })
+  @ApiResponse({ status: 200, description: 'Vacante encontrada' })
+  @ApiResponse({ status: 404, description: 'Vacante no encontrada' })
+  @ApiResponse({ status: 403, description: 'Acceso denegado' })
+  getById(@Param('id') id: string, @Req() req: any) {
+    return this.vacantes.getById(id, req.user);
+  }
+
   @Get('publicas')
   @ApiOperation({ summary: 'Listar vacantes públicas y abiertas (sin login)' })
   @ApiQuery({ name: 'tenant', required: true, description: 'Slug del tenant' })
   listPublicas(@Query('tenant') tenant: string) {
     if (!tenant) throw new BadRequestException('tenant es requerido');
     return this.vacantes.listPublicasTenantOnly(tenant.trim().toLowerCase());
-  }
-
-  @Get('publicasTodas')
-  @ApiOperation({ summary: 'Listar todas las vacantes públicas de todos los tenants' })
-  listPublicasTodas() {
-    return this.vacantes.listTodasPublicas();
   }
 
   @Patch(':id')
@@ -56,6 +78,5 @@ export class VacantesController {
   async update(@Param('id') id: string, @Body() dto: UpdateVacanteDto, @Req() req: any) {
     return this.vacantes.update(id, dto, req.user);
   }
-
 
 }

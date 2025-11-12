@@ -8,8 +8,13 @@ export class CargosService {
   constructor(private prisma: PrismaService) { }
 
   private present(c: any) {
-    const { competenciasJson, ...rest } = c;
-    return { ...rest, competencias: competenciasJson ? JSON.parse(competenciasJson) : undefined };
+    const { competenciasJson, tenant, ...rest } = c;
+    return {
+      ...rest,
+      tenantName: tenant?.name, // ✅ Agrega el nombre del tenant
+      tenantSlug: tenant?.slug,
+      competencias: competenciasJson ? JSON.parse(competenciasJson) : undefined,
+    };
   }
 
   async create(dto: CreateCargoDto, user: any) {
@@ -30,7 +35,7 @@ export class CargosService {
       data: {
         tenantId: tenant.id,
         nombre: dto.nombre,
-        competenciasJson: dto.competencias
+        competenciasJson: dto.competencias !== undefined
           ? JSON.stringify(dto.competencias)
           : undefined,
       },
@@ -39,23 +44,52 @@ export class CargosService {
     return this.present(cargo);
   }
 
-  async listByTenant(tenantSlug: string, user: any) {
-    if (!user.roles.includes('SUPERADMIN') && user.tenant !== tenantSlug.toLowerCase()) {
-      throw new ForbiddenException('No tienes acceso a este tenant');
+  async listPaginated(tenantSlug: string | undefined, user: any, page = 1, limit = 10) {
+    let whereCondition = {};
+
+    if (tenantSlug) {
+      const tenant = await this.prisma.tenants.findUnique({
+        where: { slug: tenantSlug },
+      });
+      if (!tenant) throw new NotFoundException('Tenant no encontrado');
+
+      // Verificación para usuarios que no son SUPERADMIN
+      if (!user.roles.includes('SUPERADMIN') && user.tenant !== tenantSlug) {
+        throw new ForbiddenException('No tienes acceso a este tenant');
+      }
+
+      whereCondition = { tenantId: tenant.id };
+    } else {
+      // Si no se pasa tenant y no es SUPERADMIN, no permitir
+      if (!user.roles.includes('SUPERADMIN')) {
+        throw new ForbiddenException('No tienes permisos para ver todos los cargos');
+      }
+      // SUPERADMIN sin filtro → whereCondition vacío (verá todos)
     }
 
-    const tenant = await this.prisma.tenants.findUnique({
-      where: { slug: tenantSlug },
-    });
+    const skip = (page - 1) * limit;
 
-    if (!tenant) throw new NotFoundException('Tenant no encontrado');
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.cargos.count({ where: whereCondition }),
+      this.prisma.cargos.findMany({
+        where: whereCondition,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          tenant: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      }),
+    ]);
 
-    const rows = await this.prisma.cargos.findMany({
-      where: { tenantId: tenant.id },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return rows.map(this.present);
+    return {
+      data: rows.map(this.present),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   // Opcional: listado general con filtro por tenant
@@ -93,7 +127,7 @@ export class CargosService {
       where: { id },
       data: {
         nombre: dto.nombre?.trim(),
-        competenciasJson: dto.competencias
+        competenciasJson: dto.competencias !== undefined
           ? JSON.stringify(dto.competencias)
           : undefined,
       },

@@ -60,3 +60,28 @@ export class AdminReclutadorOrSuperAdminGuard implements CanActivate {
     throw new ForbiddenException('Acceso denegado: no tiene permisos para esta acción');
   }
 }
+
+@Injectable()
+export class RolesPermitidosGuard implements CanActivate {
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user;
+
+    if (!user) throw new ForbiddenException('No autenticado');
+
+    const roles = user.roles || [];
+    const isSuperAdmin = user?.isSuperAdmin === true;
+    const isCandidate = user.tipoUsuario === 'candidato'; // ✅ CAMBIO CLAVE
+
+    if (
+      isSuperAdmin ||
+      roles.includes('ADMIN') ||
+      roles.includes('RECLUTADOR') ||
+      isCandidate
+    ) {
+      return true;
+    }
+
+    throw new ForbiddenException('No tienes permisos para acceder a este recurso');
+  }
+}

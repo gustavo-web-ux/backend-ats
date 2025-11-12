@@ -1,5 +1,5 @@
 // src/postulaciones/postulaciones.service.ts
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostulacionDto } from './dto/create-postulacione.dto';
 
@@ -40,8 +40,13 @@ export class PostulacionesService {
     const candidato = await this.prisma.candidatos.findUnique({
       where: { id: candidatoId },
     });
-    if (!candidato || candidato.tenantId !== tenant.id) {
-      throw new BadRequestException('Candidato inválido para este tenant');
+
+    // if (!candidato || candidato.tenantId !== tenant.id) {
+    //   throw new BadRequestException('Candidato inválido para este tenant');
+    // }
+
+    if (!candidato) {
+      throw new BadRequestException('Candidato no encontrado');
     }
 
     try {
@@ -99,22 +104,46 @@ export class PostulacionesService {
       throw e;
     }
   }
-
+  
   /**
    * Lista postulaciones filtrando por tenant, vacante, candidato o estado.
    */
-  async list(tenantSlug: string, filters: {
-    vacanteId?: string;
-    candidatoId?: string;
-    estado?: string;
-  }) {
-    const t = await this.prisma.tenants.findUnique({
+  async list(tenantSlug: string,
+    filters: {
+      vacanteId?: string;
+      candidatoId?: string;
+      estado?: string;
+    },
+    user: {
+      id: string;
+      isSuperAdmin?: boolean;
+      tenantId?: string;
+      roles?: string[];
+    }
+  ) {
+    const tenant = await this.prisma.tenants.findUnique({
       where: { slug: tenantSlug },
     });
-    if (!t) throw new NotFoundException('Tenant no encontrado');
+
+    if (!tenant) throw new NotFoundException('Tenant no encontrado');
+
+    if (!user.isSuperAdmin && user.tenantId !== tenant.id) {
+      throw new ForbiddenException('No puedes acceder a postulaciones de otro tenant');
+    }
+
+    if (filters.candidatoId && !user.isSuperAdmin) {
+      // Aclaración: si se quiere restringir a cierto rol, se puede hacer aquí
+      // Ejemplo: solo ADMIN puede usar candidatoId como filtro
+      const isAdmin = user.roles?.includes('ADMIN');
+      const isReclutador = user.roles?.includes('RECLUTADOR');
+
+      if (!isAdmin && !isReclutador) {
+        throw new ForbiddenException('No tienes permisos para filtrar por candidato');
+      }
+    }
 
     const where: any = {
-      tenantId: t.id,
+      tenantId: tenant.id,
     };
     if (filters.vacanteId) where.vacanteId = filters.vacanteId;
     if (filters.candidatoId) where.candidatoId = filters.candidatoId;

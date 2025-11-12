@@ -14,13 +14,12 @@ datasource db {
 }
 
 model Tenants {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
-  slug      String   @unique
-  status    String   @default("active")
-  createdAt DateTime @default(now())
+  slug      String    @unique
+  status    String    @default("active")
+  createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
-
 
   usuarios      Usuarios[]
   roles         Roles[] // <-- agregar
@@ -87,7 +86,8 @@ model Cargos {
   competenciasJson String?
   createdAt        DateTime @default(now())
 
-  vacantes Vacantes[]
+  vacantes             Vacantes[]
+  PreguntasCompetencia PreguntasCompetencia[]
 
   @@index([tenantId])
 }
@@ -110,8 +110,8 @@ model Vacantes {
 
   flujoAprobacionJson String? @db.LongText
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // --- Auditoría mínima ---
   deletedAt          DateTime?
@@ -131,7 +131,7 @@ model Vacantes {
 model Candidatos {
   id         String   @id @default(cuid())
   tenantId   String?
-  tenant     Tenants?  @relation(fields: [tenantId], references: [id])
+  tenant     Tenants? @relation(fields: [tenantId], references: [id])
   nombre     String
   email      String
   telefono   String?
@@ -147,6 +147,7 @@ model Candidatos {
   updatedByUserId    String?
   createdByAccountId String?
   updatedByAccountId String?
+  avatarFilename     String?
 
   postulaciones Postulaciones[]
   Usuarios      Usuarios[]
@@ -161,25 +162,25 @@ model Candidatos {
 }
 
 model Postulaciones {
-  id               String     @id @default(cuid())
-  tenantId         String
-  tenant           Tenants    @relation(fields: [tenantId], references: [id])
-  vacanteId        String
-  vacante          Vacantes   @relation(fields: [vacanteId], references: [id])
-  candidatoId      String
-  candidato        Candidatos @relation(fields: [candidatoId], references: [id])
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenants    @relation(fields: [tenantId], references: [id])
+  vacanteId   String
+  vacante     Vacantes   @relation(fields: [vacanteId], references: [id])
+  candidatoId String
+  candidato   Candidatos @relation(fields: [candidatoId], references: [id])
 
-  estado           String     @default("postulado") // postulado | en_proceso | descartado | contratado
-  fuente           String?
-  mensaje          String? // NUEVO
-  cvExtraUrl       String? // NUEVO
+  estado     String  @default("postulado") // postulado | en_proceso | descartado | contratado
+  fuente     String?
+  mensaje    String? // NUEVO
+  cvExtraUrl String? // NUEVO
 
   matchScore       Float?
   matchDetailsJson String?
 
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  deletedAt        DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Autoría
   createdByUserId    String?
@@ -191,6 +192,7 @@ model Postulaciones {
   eventos     EventoPostulaciones[]
   entrevistas Entrevistas[]
   feedbacks   Feedback[]
+  respuestas  RespuestasPostulacion[]
 
   @@unique([vacanteId, candidatoId])
   @@index([tenantId, vacanteId, candidatoId])
@@ -316,4 +318,29 @@ model AuditLog {
   @@index([actorUserId, ts])
   @@index([actorAccountId, ts])
   @@index([action, ts])
+}
+
+model PreguntasCompetencia {
+  id        String   @id @default(cuid())
+  cargoId   String
+  cargo     Cargos   @relation(fields: [cargoId], references: [id])
+  texto     String
+  tipo      String // "multiple_choice" | "checkbox" | "open_text" etc.
+  opciones  String? // JSON string con opciones, en caso de ser necesaria
+  createdAt DateTime @default(now())
+
+  respuestas RespuestasPostulacion[]
+}
+
+model RespuestasPostulacion {
+  id             String               @id @default(cuid())
+  postulacionId  String
+  postulacion    Postulaciones        @relation(fields: [postulacionId], references: [id])
+  preguntaId     String
+  pregunta       PreguntasCompetencia @relation(fields: [preguntaId], references: [id])
+  respuestaTexto String // respuesta del usuario (texto, opción seleccionada, etc.)
+  createdAt      DateTime             @default(now())
+
+  @@index([postulacionId])
+  @@index([preguntaId])
 }

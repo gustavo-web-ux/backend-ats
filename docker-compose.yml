@@ -31,6 +31,8 @@ services:
     volumes:
       - ./:/app
       - /app/node_modules
+      - /home/administrador/uploads/avatars:/app/uploads/avatars
+      - /home/administrador/uploads/archivos:/app/uploads/archivos
     # Aplica migraciones y arranca Nest en modo dev
     command: sh -c "npx prisma migrate deploy --schema=src/prisma/schema.prisma && npm run start:dev"
 

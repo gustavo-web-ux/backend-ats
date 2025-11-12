@@ -3,9 +3,19 @@ import { AppModule } from './app.module';
 import * as cookieParser from 'cookie-parser';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { join } from 'path';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // 🔽 Servir archivos estáticos desde la ruta donde guardás los avatares
+  app.useStaticAssets('/home/administrador/uploads/avatars', {
+    prefix: '/public/avatars', // URL accesible públicamente
+  });
+  app.useStaticAssets('/home/administrador/uploads/archivos', {
+  prefix: '/public/archivos',
+});
 
   app.use(cookieParser());
   app.enableCors({
